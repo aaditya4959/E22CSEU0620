@@ -11,6 +11,8 @@ const BASE_URL  = "http://20.244.56.144/evaluation-service";
 
 const app = express();
 
+app.use(express.json());
+
 
 //helper function for getting post counts
 async function getPostCount(userId: string){
@@ -62,6 +64,74 @@ app.get("/users",async  (req, res) => {
         })
     }
 })
+
+
+// Function to fetch all posts
+const fetchPosts = async () => {
+    try {
+        const response = await axios.get(`${BASE_URL}/posts`, {
+            headers: { Authorization: `Bearer ${JWT_TOKEN}` },
+        });
+        return response.data.posts || [];
+    } catch (error: any) {
+        console.error("Error fetching posts:", error.message);
+        return [];
+    }
+};
+
+// Function to fetch comments for a given post ID
+const fetchComments = async (postId: string) => {
+    try {
+        const response = await axios.get(`${BASE_URL}/posts/${postId}/comments`, {
+            headers: { Authorization: `Bearer ${JWT_TOKEN}` },
+        });
+        return response.data.comments || [];
+    } catch (error:any) {
+        console.error(`Error fetching comments for post ${postId}:`, error.message);
+        return [];
+    }
+};
+
+// Endpoint to get latest or popular posts
+//@ts-ignore
+app.get("/posts", async(req, res) => {
+    try{
+        const { type} = req.query;
+
+        // Validate query param
+        if (  !type || (type !== "latest" && type !== "popular")) {
+          return res.status(400).json({ error: "Invalid type. Use 'latest' or 'popular'." });
+        }
+
+        // Fetch posts
+        let posts = await fetchPosts();
+
+        if (posts.length===0) {
+            return res.json([]);
+        }
+
+        if (  type === "latest" )  {
+            // Sort by createdAt timestamp (newest first) and get top 5
+            //@ts-ignore
+            posts =posts.sort((a: any, b: any) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
+        } else if(type === "popular") {
+            // Fetch comment counts for each post
+            for (  let post of posts ) {
+               post.comments = await fetchComments(post.id);
+            }
+            // Find max comment count
+            //@ts-ignore
+            const maxComments = Math.max(...posts.map(post => post.comments.length));
+            //@ts-ignore
+            posts = posts.filter(post => post.comments.length === maxComments);
+        }
+
+        res.json(posts);
+    } catch(error:any) {
+        console.error("Error handling /posts request:", error.message);
+        res.status(500).json({ error: "Failed to fetch posts" });
+    }
+});
 
 
 app.listen(PORT, () => {
